@@ -1,6 +1,9 @@
 local runtime = require("./runtime")
-local GLYPH_CACHE = 1
--- {version, family, offsets = {["F0566"] = -0.2}}: em shifts that centre each icon's ink.
+local PaneStatus = require("./pane-status")
+local PaneIcons = require("./pane-icons")
+local PaneTitles = require("./pane-titles")
+local GLYPH_CACHE = 2
+-- The visible title glyphs share native optical offsets and font-independent SVG paths.
 local glyphs
 local measuring
 local invalidate
@@ -15,7 +18,7 @@ local function paneTitle(pane)
 	local title = string.gsub(pane.title, "%c", " ")
 	if title ~= "" then
 		local first = utf8.codepoint(title)
-		-- The native tab already owns the Nerd Font icon; captions are text.
+		-- The icon is rendered separately so every pane title starts in the same column.
 		if (first >= 0xE000 and first <= 0xF8FF) or (first >= 0xF0000 and first <= 0x10FFFD) then
 			title = string.sub(title, utf8.offset(title, 2) or (#title + 1))
 		end
@@ -28,6 +31,11 @@ end
 local function panesByTab(cx)
 	local groups = {}
 	for _, pane in cx.session:panes() do
+		local title = PaneTitles.get(pane.pane)
+		if title and title ~= pane.title then
+			pane = table.clone(pane)
+			pane.title = title
+		end
 		if type(pane.tab) == "number" then
 			local group = groups[pane.tab]
 			if not group then group = {}; groups[pane.tab] = group end
@@ -48,7 +56,11 @@ local previousCss
 local function renderCaptions(cx)
 	local groups = panesByTab(cx)
 	local rules = {}
-	for _, panes in groups do
+	local tabIds = {}
+	for tabId in groups do table.insert(tabIds, tabId) end
+	table.sort(tabIds)
+	for _, tabId in tabIds do
+		local panes = groups[tabId]
 		for _, pane in panes do
 			local icon = leadingIcon(pane.title)
 			local shift = icon and glyphs and glyphs.offsets[icon]
@@ -61,19 +73,21 @@ local function renderCaptions(cx)
 			end
 		end
 	end
-	for _, tab in cx.session:tabs() do
-		local panes = groups[tab.id]
+	for _, tabId in tabIds do
+		local panes = groups[tabId]
 		if panes and #panes > 1 then
-			local lines = table.create(#panes)
-			for i, pane in panes do lines[i] = (if i == #panes then "└ " else "├ ") .. paneTitle(pane) end
-			-- A Tern tab renders at most three icon nodes. Use its front icon only
-			-- as an exact-ID anchor and render every pane, not the icon subset.
-			table.insert(rules, string.format(
-				'#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0[data-pane="%.0f"]::after{content:%s;}',
-				tab.pane, cssString(table.concat(lines, "\n"))
-			))
+			local lines, selectors = table.create(#panes), table.create(#panes)
+			for i, pane in panes do
+				lines[i] = paneTitle(pane)
+				selectors[i] = string.format('#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out)[data-pane="%.0f"]::after', pane.pane)
+			end
+			-- Every potential front icon already carries the same captions. Focus changes therefore
+			-- match immediately without waiting for the debounced CSS refresh or replacing the sheet.
+			local image, width, height = PaneIcons.background(panes, if glyphs then glyphs.paths else {})
+			table.insert(rules, table.concat(selectors, ",") .. string.format("{content:%s;background-image:url(%s);background-size:%dpx %dpx;}", cssString(table.concat(lines, "\n")), image, width, height))
 		end
 	end
+	PaneStatus.render(groups, cx)
 	local css = table.concat(rules, "\n")
 	if css == previousCss then return end
 	tern.css("sidebar-titles", css)
@@ -83,28 +97,41 @@ end
 local function measureGlyphs(cx)
 	local family = cx.settings:get("ui_font") or cx.settings:get("font_family")
 	if type(family) ~= "string" or family == "" then glyphs = nil; return end
-	if glyphs and glyphs.family == family then return end
-	local cached = tern.kv.get("glyph-offsets")
-	if type(cached) == "table" and cached.version == GLYPH_CACHE and cached.family == family then glyphs = cached; return end
-	if measuring == family then return end
-	measuring = family
-	local started, err = pcall(tern.process.run, { runtime.node, tern.plugin.dir .. "/glyphs.mjs", family }, { timeout_ms = 20000 }, function(result)
+	if not glyphs or glyphs.family ~= family then
+		local cached = tern.kv.get("glyph-offsets")
+		glyphs = if type(cached) == "table" and cached.version == GLYPH_CACHE and cached.family == family
+			and type(cached.paths) == "table" then cached else { version = GLYPH_CACHE, family = family, offsets = {}, paths = {} }
+	end
+	if measuring then return end
+	local missing = {}
+	for _, pane in cx.session:panes() do
+		local icon = leadingIcon(PaneTitles.get(pane.pane) or pane.title)
+		if icon and glyphs.paths[icon] == nil then missing[icon] = true end
+	end
+	local points = {}; for icon in missing do table.insert(points, icon) end
+	if #points == 0 then return end
+	table.sort(points)
+	measuring = true
+	local argv = { runtime.node, tern.plugin.dir .. "/glyphs.mjs", family }
+	for _, icon in points do table.insert(argv, icon) end
+	local started, err = pcall(tern.process.run, argv, { timeout_ms = 20000 }, function(result)
 		measuring = nil
+		if not glyphs or glyphs.family ~= family then invalidate(); return end
 		local ok, data = pcall(tern.json.decode, result.stdout)
-		if result.status ~= 0 or not ok or type(data) ~= "table" or type(data.offsets) ~= "table" then
-			tern.log.warn("omp-sessions: icon metrics unavailable for", family, result.stderr)
-			-- Remember the failure for this family so title changes do not respawn the scan.
-			glyphs = { version = GLYPH_CACHE, family = family, offsets = {} }
+		if result.status ~= 0 or not ok or type(data) ~= "table" or type(data.paths) ~= "table" or type(data.offsets) ~= "table" then
+			for _, icon in points do glyphs.paths[icon] = false end
+			tern.log.warn("omp-sessions: icon artwork unavailable for", family, result.stderr)
 		else
-			glyphs = { version = GLYPH_CACHE, family = family, offsets = data.offsets }
+			for icon, path in data.paths do glyphs.paths[icon] = path end
+			for icon, offset in data.offsets do glyphs.offsets[icon] = offset end
 			tern.kv.set("glyph-offsets", glyphs)
 		end
 		invalidate()
 	end)
 	if not started then
 		measuring = nil
-		glyphs = { version = GLYPH_CACHE, family = family, offsets = {} }
-		tern.log.warn("omp-sessions: cannot run " .. runtime.node .. " for icon metrics:", tostring(err))
+		for _, icon in points do glyphs.paths[icon] = false end
+		tern.log.warn("omp-sessions: cannot run " .. runtime.node .. " for icon artwork:", tostring(err))
 	end
 end
 
@@ -141,9 +168,15 @@ end
 
 tern.css("sidebar", tern.fs.read(tern.plugin.dir .. "/sidebar.css"))
 tern.on("window_start", invalidate)
-for _, event in { "title", "focus", "pane_created", "pane_closed", "tab_created", "tab_closed", "session_ended", "float_moved" } do
+for _, event in { "focus", "pane_created", "pane_closed", "tab_created", "tab_closed", "session_ended", "float_moved" } do
 	tern.on(event, invalidate)
 end
+tern.on("title", function(ev)
+	-- Known OMP panes are refreshed from conversation metadata, not child-process OSC titles.
+	if not PaneTitles.get(ev.pane) then invalidate() end
+end)
 tern.command({ id = "pick_pane", title = "Jump to Pane", group = "OMP", icon = "terminal", run = pickPane })
 tern.bind("ctrl+alt+j", "plugin.omp-sessions.pick_pane")
+PaneStatus.start(panesByTab)
+PaneTitles.start(invalidate)
 invalidate()

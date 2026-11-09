@@ -1,11 +1,11 @@
-// Measures how far each private-use icon's ink sits from the centre of its advance in the
-// installed font of a family. Nerd Font "NF" (non-Mono) builds give icons a one-cell advance but
-// draw past it, so text centring shifts the icon right; the sidebar translates it back.
-// Usage: node glyphs.mjs "<font family>"  ->  {"font": path, "offsets": {"F0566": -0.2, ...}}
+// Reads only the title icons currently in use. Native glyph offsets and SVG outlines share
+// the configured font; the SVG renderer needs paths because it does not render font text.
+// Usage: node glyphs.mjs "<font family>" F0566 EA64
 import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseFont } from './vendor/opentype-2.0.0.min.mjs';
 
 const PRIVATE_USE = [[0xe000, 0xf8ff], [0xf0000, 0xffffd], [0x100000, 0x10fffd]];
 
@@ -86,71 +86,38 @@ export function findFont(family) {
   return best?.file;
 }
 
-function* privateUseGlyphs(font, cmap) {
-  const subtables = [];
-  for (let i = 0, count = font.readUInt16BE(cmap + 2); i < count; i++) {
-    const at = cmap + 4 + i * 8;
-    subtables.push({ platform: font.readUInt16BE(at), encoding: font.readUInt16BE(at + 2), offset: cmap + font.readUInt32BE(at + 4) });
+export function measure(file, codepoints) {
+  const bytes = readFileSync(file);
+  const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const font = parseFont(buffer, { lowMemory: true });
+  const offsets = {}, paths = {};
+  for (const cp of new Set(codepoints)) {
+    if (!PRIVATE_USE.some(([lo, hi]) => cp >= lo && cp <= hi)) continue;
+    const key = cp.toString(16).toUpperCase();
+    const index = font.charToGlyphIndex(String.fromCodePoint(cp));
+    paths[key] = false;
+    if (!index) continue;
+    const glyph = font.glyphs.get(index);
+    const ink = glyph.getBoundingBox();
+    const shift = Math.round(((glyph.advanceWidth / 2 - (ink.x1 + ink.x2) / 2) / font.unitsPerEm) * 1000) / 1000;
+    if (Math.abs(shift) >= 0.02) offsets[key] = shift;
+    const box = glyph.getPath(0, 0, 1, undefined, font).getBoundingBox();
+    const size = Math.max(box.x2 - box.x1, box.y2 - box.y1);
+    if (size <= 0) continue;
+    const scale = 12 / size;
+    const x = 8 - (box.x1 + box.x2) / 2 * scale;
+    const y = 8 - (box.y1 + box.y2) / 2 * scale;
+    paths[key] = glyph.getPath(x, y, scale, undefined, font).toPathData({ decimalPlaces: 2, flipY: false });
   }
-  const full = subtables.find(t => t.platform === 3 && t.encoding === 10 && font.readUInt16BE(t.offset) === 12)
-    ?? subtables.find(t => t.platform === 0 && font.readUInt16BE(t.offset) === 12);
-  const inPrivateUse = cp => PRIVATE_USE.some(([lo, hi]) => cp >= lo && cp <= hi);
-  if (full) {
-    for (let i = 0, groups = font.readUInt32BE(full.offset + 12); i < groups; i++) {
-      const at = full.offset + 16 + i * 12;
-      const start = font.readUInt32BE(at), end = font.readUInt32BE(at + 4), glyph = font.readUInt32BE(at + 8);
-      for (let cp = start; cp <= end; cp++) if (inPrivateUse(cp)) yield [cp, glyph + cp - start];
-    }
-    return;
-  }
-  const bmp = subtables.find(t => t.platform === 3 && t.encoding === 1 && font.readUInt16BE(t.offset) === 4);
-  if (!bmp) return;
-  const segments = font.readUInt16BE(bmp.offset + 6) / 2;
-  const ends = bmp.offset + 14, starts = ends + segments * 2 + 2, deltas = starts + segments * 2, ranges = deltas + segments * 2;
-  for (let s = 0; s < segments; s++) {
-    const start = font.readUInt16BE(starts + s * 2), end = font.readUInt16BE(ends + s * 2);
-    const delta = font.readInt16BE(deltas + s * 2), range = font.readUInt16BE(ranges + s * 2);
-    for (let cp = start; cp <= end && cp !== 0xffff; cp++) {
-      if (!inPrivateUse(cp)) continue;
-      let glyph;
-      if (range === 0) glyph = (cp + delta) & 0xffff;
-      else {
-        const raw = font.readUInt16BE(ranges + s * 2 + range + (cp - start) * 2);
-        glyph = raw === 0 ? 0 : (raw + delta) & 0xffff;
-      }
-      if (glyph) yield [cp, glyph];
-    }
-  }
-}
-
-export function measure(file) {
-  const font = readFileSync(file);
-  const map = tables((offset, length) => font.subarray(offset, offset + length));
-  for (const tag of ['head', 'hhea', 'hmtx', 'maxp', 'cmap', 'loca', 'glyf']) {
-    if (!map.has(tag)) throw new Error(`${path.basename(file)} has no ${tag} table (CFF fonts are not supported)`);
-  }
-  const head = map.get('head').offset;
-  const unitsPerEm = font.readUInt16BE(head + 18);
-  const longLoca = font.readInt16BE(head + 50) === 1;
-  const metrics = font.readUInt16BE(map.get('hhea').offset + 34);
-  const hmtx = map.get('hmtx').offset, loca = map.get('loca').offset, glyf = map.get('glyf').offset;
-  const glyphs = font.readUInt16BE(map.get('maxp').offset + 4);
-  const location = gid => longLoca ? font.readUInt32BE(loca + gid * 4) : font.readUInt16BE(loca + gid * 2) * 2;
-  const offsets = {};
-  for (const [cp, gid] of privateUseGlyphs(font, map.get('cmap').offset)) {
-    if (gid >= glyphs || location(gid) === location(gid + 1)) continue;
-    const advance = font.readUInt16BE(hmtx + Math.min(gid, metrics - 1) * 4);
-    const at = glyf + location(gid);
-    const ink = (font.readInt16BE(at + 2) + font.readInt16BE(at + 6)) / 2;
-    const shift = Math.round(((advance / 2 - ink) / unitsPerEm) * 1000) / 1000;
-    if (Math.abs(shift) >= 0.02) offsets[cp.toString(16).toUpperCase()] = shift;
-  }
-  return offsets;
+  return { offsets, paths };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const family = process.argv[2];
-  if (!family) { process.stderr.write('Usage: glyphs.mjs <font family>\n'); process.exit(1); }
+  if (!family) { process.stderr.write('Usage: glyphs.mjs <font family> [hex codepoints...]\n'); process.exit(1); }
+  const codepoints = process.argv.slice(3).map(cp => Number.parseInt(cp, 16));
   const font = findFont(family);
-  process.stdout.write(JSON.stringify(font ? { font, offsets: measure(font) } : { font: null, offsets: {} }) + '\n');
+  const metrics = font ? measure(font, codepoints) : { offsets: {}, paths: Object.fromEntries(codepoints.map(cp => [cp.toString(16).toUpperCase(), false])) };
+  process.stdout.write(JSON.stringify({ font, ...metrics }) + '\n');
 }

@@ -168,7 +168,7 @@ export async function scanSessions({ tern, mode = 'list', root, inspection,
       if (!live && !metadata.title && !metadata.preview) continue;
       sessions.push({ id: metadata.id || path.basename(file, '.jsonl'), path: file,
         cwd: metadata.cwd || live?.cwd || '',
-        title: metadata.title || metadata.preview || live?.panes[0]?.title || path.basename(file, '.jsonl'),
+        title: metadata.title || metadata.preview || path.basename(file, '.jsonl'),
         modified: metadata.modified, preview: metadata.preview, panes: live?.panes ?? [] });
     }
   }));
