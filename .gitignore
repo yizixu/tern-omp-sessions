@@ -1,0 +1,12 @@
+# Local configuration and Tern development output
+/runtime.local.json
+/tern.d.luau
+/target/
+.env*
+*.jsonl
+*.db
+*.db-shm
+*.db-wal
+*.log
+Thumbs.db
+.DS_Store
