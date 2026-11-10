@@ -14,6 +14,7 @@
 - Fixed loading indicators freezing when switching to a completed pane.
 - Fixed icon colors following the system theme instead of Tern's selected theme.
 - Fixed missing parts of Nerd Font icons.
+- Fixed gaps and uneven edges along selected cards' left borders.
 
 ## 1.1.7
 

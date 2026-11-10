@@ -24,7 +24,7 @@
 	background: var(--omp-card-fill);
 	box-shadow: 0 2px 5px rgba(0, 0, 0, .18);
 }
-/* A fixed border keeps selection and hover from changing the card's geometry. */
+/* Keep border plus padding constant when selection thickens the left edge. */
 #sidebar .tn-vt .nav-row:hover:not(.on) {
 	--omp-card-fill: color-mix(in srgb, var(--accent) 5%, var(--omp-card-surface));
 	background-color: var(--omp-card-fill);
@@ -33,7 +33,10 @@
 	--omp-card-fill: color-mix(in srgb, var(--accent) 12%, var(--omp-card-surface));
 	background-color: var(--omp-card-fill);
 	border-color: var(--omp-card-accent);
-	box-shadow: inset 3px 0 0 var(--omp-card-accent), 0 3px 8px rgba(0, 0, 0, .22);
+	border-left-width: 4px;
+	padding-left: 7px;
+	background-image: none;
+	box-shadow: 0 3px 8px rgba(0, 0, 0, .22);
 }
 
 /* Titles use the whole content width; active status layers cover their trailing text. */
@@ -110,6 +113,7 @@
 	padding: 0;
 	transform: none;
 }
+#sidebar .tn-vt .nav-row.on > .tn-dk.n1 { left: 7px; }
 /* When a pane closes, Tern keeps its icon node (.out) around for an exit animation. It must not
    take space in this layout (it would push the remaining icon and status down) or be seen. */
 #sidebar .tn-vt .nav-row > .tn-dk > .tn-dk-c.out {
