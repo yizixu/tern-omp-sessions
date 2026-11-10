@@ -1,7 +1,9 @@
 local runtime = require("./runtime")
 local M = {}
 local LINE = 24
-local FRAMES = 12
+local WIDTH = 36
+local FADE = "linear-gradient(to right,rgb(from var(--omp-card-fill) r g b / 0),var(--omp-card-fill) 16px)"
+local FRAMES = 54 -- 60 fps over the existing 900 ms revolution.
 local alerts = {}
 local previousCss
 local sampling = false
@@ -25,22 +27,59 @@ local function icon(state, angle)
 end
 
 local function sprite(states, count, moving)
-	-- A horizontal CSS sprite rotates only working rings. Other rows are identical in every
-	-- frame, so they stay still; no SVG scripts, image animation, or per-frame Lua work is needed.
-	local frames = if moving then FRAMES else 1
-	local parts = { string.format('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d">', frames * 16, count * LINE) }
+	-- The endpoint repeats frame zero, avoiding a blank or angular jump at the loop seam.
+	local frames = if moving then FRAMES + 1 else 1
+	local parts = { string.format('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d">', frames * WIDTH, count * LINE), '<defs>' }
+	local defined = {}
+	for row = 1, count do
+		local state = states[row]
+		if state and not defined[state] then
+			table.insert(parts, '<g id="status-' .. state .. '">' .. icon(state, 0) .. '</g>')
+			defined[state] = true
+		end
+	end
+	table.insert(parts, '</defs>')
 	for frame = 0, frames - 1 do
 		for row = 1, count do
-			if states[row] then
-				table.insert(parts, string.format('<g transform="translate(%d %.1f)">', frame * 16, (row - 1) * LINE + (LINE - 16) / 2))
-				table.insert(parts, icon(states[row], frame * 360 / FRAMES))
-				table.insert(parts, '</g>')
+			local state = states[row]
+			if state then
+				local rotation = if state == "working" then string.format(' transform="rotate(%.3f 8 8)"', (frame % FRAMES) * 360 / FRAMES) else ""
+				table.insert(parts, string.format('<g transform="translate(%d %.1f)"><use href="#status-%s"%s/></g>', frame * WIDTH + WIDTH - 16, (row - 1) * LINE + (LINE - 16) / 2, state, rotation))
 			end
 		end
 	end
 	table.insert(parts, '</svg>')
 	return '"data:image/svg+xml;base64,' .. tern.base64.encode(table.concat(parts)) .. '"', frames
 end
+
+local function statusRule(selector, states, count, moving, name)
+	local image, frames = sprite(states, count, moving)
+	local images = { "url(" .. image .. ")" }
+	local sizes = { string.format("%dpx %dpx", frames * WIDTH, count * LINE) }
+	local positions = { "0px 0px" }
+	local endpoint = { string.format("-%dpx 0px", FRAMES * WIDTH) }
+	for row = 1, count do
+		local position = string.format("0px %dpx", (row - 1) * LINE)
+		-- Acknowledging a completion must not change the working sprite's animation tracks.
+		-- Idle rows keep a transparent layer rather than removing a background-position entry.
+		table.insert(images, if states[row] then FADE else "none")
+		table.insert(sizes, string.format("%dpx %dpx", WIDTH, LINE))
+		table.insert(positions, position)
+		table.insert(endpoint, position)
+	end
+	local animation = if moving then string.format("%s 900ms steps(%d) infinite", name, FRAMES) else "none"
+	local rule = selector .. string.format("{height:%dpx;background-image:%s;background-size:%s;background-position:%s;animation:%s;}", count * LINE, table.concat(images, ","), table.concat(sizes, ","), table.concat(positions, ","), animation)
+	-- Explicit, fixed-length endpoints keep the timeline independent of alert acknowledgement.
+	if moving then rule ..= "@keyframes " .. name .. "{from{background-position:" .. table.concat(positions, ",") .. ";}to{background-position:" .. table.concat(endpoint, ",") .. ";}}" end
+	return rule
+end
+
+local nativeRules = {}
+for _, state in { "working", "waiting", "done", "failed", "bell" } do
+	local selector = '#sidebar .tn-vt .tn-dk.n1 > .tn-dk-c:not(.out)[data-program="omp"][data-st="' .. state .. '"]::before'
+	table.insert(nativeRules, statusRule(selector, { state }, 1, state == "working", "ompSingleStatus" .. state))
+end
+local NATIVE_RULES = table.concat(nativeRules, "\n")
 
 local function paneState(pane, agent)
 	if pane.error or (type(pane.exited) == "number" and pane.exited ~= 0) then return "failed" end
@@ -58,7 +97,7 @@ function M.render(groups, cx)
 	local tabIds = {}
 	for id in groups do table.insert(tabIds, id) end
 	table.sort(tabIds)
-	local rules = {}
+	local rules = { NATIVE_RULES }
 	for _, tabId in tabIds do
 		local panes = groups[tabId]
 		if #panes > 1 then
@@ -68,11 +107,12 @@ function M.render(groups, cx)
 				states[row] = paneState(pane, agents[pane.pane])
 				active = active or states[row] ~= nil
 				moving = moving or states[row] == "working"
-				selectors[row] = string.format('#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out)[data-pane="%.0f"]::before', pane.pane)
+				-- Native depth classes change with focus. Keep the timeline on every pane node;
+				-- CSS reveals only the front one without destroying the others' pseudo-elements.
+				selectors[row] = string.format('#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c:not(.out)[data-pane="%.0f"]::before', pane.pane)
 			end
 			if active then
-				local image, frames = sprite(states, #panes, moving)
-				table.insert(rules, table.concat(selectors, ",") .. string.format('{height:%dpx;background-image:url(%s);background-size:%dpx %dpx;animation:%s;}', #panes * LINE, image, frames * 16, #panes * LINE, if moving then "ompPaneStatusSpin 900ms steps(11) infinite" else "none"))
+				table.insert(rules, statusRule(table.concat(selectors, ","), states, #panes, moving, string.format("ompPaneStatusSpin%.0f", tabId)))
 			end
 		end
 	end

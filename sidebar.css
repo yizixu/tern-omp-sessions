@@ -1,11 +1,15 @@
 /* Only the vertical tab rail, not the files tree, horizontal tabs, or pane layout.
    Tern's CSS engine lacks grid placement and :has(), so lines are built with flex order
    and absolutely positioned pieces anchored to the row.
-   Layout: [icon] title ........ [status for a single pane]
-           [ ×  ] ├ [pane icon] pane title [its own status]
-   Every pane title reserves the same status width, so status changes never move text. */
+   Layout: [layout icon] full-width title with floating status / hover close at the right
+                        ├ [pane icon] full-width pane title with floating status.
+   Status and close backdrops fade from the left without reserving text width. */
 #sidebar .tn-vt .nav-row {
 	position: relative;
+	box-sizing: border-box;
+	--omp-card-surface: rgb(from var(--panel) r g b / 1);
+	--omp-card-accent: color-mix(in srgb, var(--accent) 85%, var(--t1));
+	--omp-card-fill: var(--omp-card-surface);
 	display: flex;
 	flex-wrap: wrap;
 	align-items: flex-start;
@@ -14,37 +18,84 @@
 	height: auto;
 	min-height: 32px;
 	padding: 6px 10px;
+	margin: 0 0 8px;
+	border: 1px solid color-mix(in srgb, var(--t2) 60%, var(--omp-card-surface));
+	border-radius: 10px;
+	background: var(--omp-card-fill);
+	box-shadow: 0 2px 5px rgba(0, 0, 0, .18);
 }
-/* The title alone reserves the status slot (16px icon + 6px gap), so pane titles below use full width. */
-#sidebar .tn-vt .nav-row > .lbl {
+/* A fixed border keeps selection and hover from changing the card's geometry. */
+#sidebar .tn-vt .nav-row:hover:not(.on) {
+	--omp-card-fill: color-mix(in srgb, var(--accent) 5%, var(--omp-card-surface));
+	background-color: var(--omp-card-fill);
+}
+#sidebar .tn-vt .nav-row.on {
+	--omp-card-fill: color-mix(in srgb, var(--accent) 12%, var(--omp-card-surface));
+	background-color: var(--omp-card-fill);
+	border-color: var(--omp-card-accent);
+	box-shadow: inset 3px 0 0 var(--omp-card-accent), 0 3px 8px rgba(0, 0, 0, .22);
+}
+
+/* Titles use the whole content width; active status layers cover their trailing text. */
+#sidebar .tn-vt .nav-row > .lbl,
+#sidebar .tn-vt .nav-row.working > .lbl {
 	flex: 1 1 0;
 	width: 0;
 	min-width: 0;
-	margin-right: 22px;
+	margin-right: 0;
 	line-height: 20px;
 	text-align: left;
+	font-weight: 600;
+	opacity: 1;
+	animation: none;
 }
 #sidebar .tn-vt .nav-row > .meta { line-height: 20px; }
-/* The shortcut hint repeats the tab number and truncates the active title. */
-#sidebar .tn-vt .nav-row > .meta.keys { display: none; }
-/* Switch close and parent art in the same hover frame; hidden controls must not intercept hits. */
+/* Duplicate shortcut hints and empty metadata must not leave a trailing flex gap. */
+#sidebar .tn-vt .nav-row > .meta.keys,
+#sidebar .tn-vt .nav-row > .meta:empty { display: none; }
+/* Close floats above the title's trailing text; the left layout silhouette never swaps. */
 #sidebar .tn-vt .nav-row > .tn-tx {
 	position: absolute;
 	top: 8px;
-	right: auto;
+	right: 10px;
 	bottom: auto;
-	left: 10px;
+	left: auto;
 	margin: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	width: 16px;
+	height: 16px;
+	padding: 0;
 	z-index: 4;
-	/* Tern also shows close on the active row; keep the parent icon visible until hover. */
+	/* Hover close covers a single-pane status without stopping its animation underneath. */
 	opacity: 1 !important;
 	visibility: hidden;
 	transition: none;
 }
-#sidebar .tn-vt .nav-row:hover > .tn-tx { visibility: visible; }
-#sidebar .tn-vt .nav-row:hover > .tn-dk > .tn-dk-c > * { visibility: hidden; }
+#sidebar .tn-vt .nav-row > .tn-tx,
+#sidebar .tn-vt .nav-row > .tn-tx:hover {
+	background: none;
+	border-radius: 0;
+	box-shadow: none;
+}
+#sidebar .tn-vt .nav-row > .tn-tx::before {
+	content: "";
+	position: absolute;
+	top: -4px;
+	right: 0;
+	width: 36px;
+	height: 24px;
+	z-index: -1;
+	background: linear-gradient(to right, rgb(from var(--omp-card-fill) r g b / 0), var(--omp-card-fill) 16px);
+	pointer-events: none;
+}
+#sidebar .tn-vt .nav-row > .tn-tx > .ico { width: 14px; height: 14px; }
+#sidebar .tn-vt .nav-row:hover > .tn-tx,
+#sidebar .tn-vt .nav-row:active > .tn-tx { visibility: visible; transition: none; }
 
-/* Single pane: the icon layer spans the first line (icon at its left, status slot at its right),
+/* Single pane: the icon layer spans the first line, with its icon left and floating status right,
    out of flow, so the title's position never depends on it. */
 #sidebar .tn-vt .nav-row > .tn-dk.n1 {
 	position: absolute;
@@ -80,29 +131,28 @@
 	transform: none;
 	filter: none;
 }
-#sidebar .tn-vt .nav-row > .tn-dk.n1 > .tn-dk-c > * {
-	display: block;
+#sidebar .tn-vt .nav-row > .tn-dk.n1 > .tn-dk-c > * { display: none; }
+/* A zero-offset accent shadow shows through only the translucent SVG surfaces;
+   opaque artwork, captions and tree lines keep their original contrast. */
+#sidebar .tn-vt .tn-dk.n1 > .tn-dk-c:not(.out)::after {
+	content: "";
 	position: absolute;
 	inset: auto;
 	top: 0;
 	left: 0;
 	width: 16px;
 	height: 16px;
-	min-width: 16px;
-	min-height: 16px;
-	max-width: 16px;
-	max-height: 16px;
-}
-#sidebar .tn-vt .nav-row > .tn-dk.n1 > .tn-dk-c > .tn-dk-g {
-	display: flex;
-	align-items: center;
-	justify-content: center;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	background-repeat: no-repeat;
+	filter: drop-shadow(0 0 0 var(--accent));
 }
 /* Every icon is out of flow; the title starts after its column. */
 #sidebar .tn-vt .nav-row > .tn-dk + .lbl { margin-left: 24px; }
 
-/* A single native front icon anchors the parent row. Each pane below has its own icon;
-   caption and status pseudo-elements still use the deck as their containing block. */
+/* The front native node hosts the layout silhouette and every pane caption.
+   Caption and status pseudo-elements use the deck as their containing block. */
 #sidebar .tn-vt .nav-row > .tn-dk:not(.n1) {
 	order: 1;
 	flex: 0 0 100%;
@@ -126,45 +176,28 @@
 }
 #sidebar .tn-vt .tn-dk:not(.n1) + .lbl { margin-right: 0; }
 #sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c > * { display: none; }
-#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out) > .ico,
-#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out) > .tn-dk-g {
-	display: block;
-	position: absolute;
-	inset: auto;
-	top: -18px;
-	left: 0;
-	width: 16px;
-	height: 16px;
-	min-width: 0;
-	max-width: 16px;
-	max-height: 16px;
-	z-index: 3;
-}
-#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out) > .tn-dk-g {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
 #sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c::after { content: none; }
 #sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out)::after {
 	order: 1;
-	flex: 0 0 100%;
+	flex: 0 0 calc(100% + 4px);
 	position: static;
 	display: block;
 	box-sizing: border-box;
 	width: auto;
 	min-width: 0;
-	max-width: 100%;
+	max-width: calc(100% + 4px);
 	height: auto;
-	padding: 0 22px 0 40px;
+	margin: -26px 0 0 -4px;
+	padding: 26px 0 0 44px;
 	border: 0;
 	border-radius: 0;
 	background: none;
 	box-shadow: none;
 	background-repeat: no-repeat;
 	background-position: left top;
+	filter: drop-shadow(0 0 0 var(--accent));
 	animation: none;
-	opacity: .9;
+	opacity: 1;
 	color: inherit;
 	font-size: 12px;
 	font-weight: 400;
@@ -175,100 +208,37 @@
 	text-overflow: ellipsis;
 }
 
-/* Native status stays on the title row only for a single-pane tab. Split tabs draw a status
-   column keyed to every pane, including those outside Tern's three native icon layers. */
-#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st]::before {
-	content: var(--omp-rail-status-text);
-	position: absolute;
-	z-index: var(--omp-rail-status-rank);
-	display: block;
-	box-sizing: border-box;
-	width: 16px;
-	height: 16px;
-	padding: 0;
-	border: 0;
-	border-radius: 8px;
-	background: var(--omp-rail-status-fill);
-	box-shadow: none;
-	animation: none;
-	transform: none;
-	filter: none;
-	opacity: 1;
-	color: var(--omp-rail-status-ink);
-	font-size: 10px;
-	font-weight: 700;
-	line-height: 16px;
-	text-align: center;
-	white-space: nowrap;
-}
-#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st="working"]::before {
-	border: 2px solid #5aa2ff;
-	border-top-color: transparent;
-	animation: ompRailSpin 900ms linear infinite;
-}
-@keyframes ompRailSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-	#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st="working"]::before { animation: none; }
-}
-#sidebar .tn-vt .tn-dk.n1 > .tn-dk-c[data-program="omp"][data-st]::before { inset: auto; top: 0; right: 0; }
-#sidebar .tn-vt .tn-dk.n1 > .tn-dk-c[data-program="omp"][data-st]::after { content: none; }
-#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st="working"] {
-	--omp-rail-status-text: "";
-	--omp-rail-status-fill: transparent;
-	--omp-rail-status-ink: transparent;
-	--omp-rail-status-rank: 1;
-}
-#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st="waiting"] {
-	--omp-rail-status-text: "?";
-	--omp-rail-status-fill: #e0a526;
-	--omp-rail-status-ink: #2b1d00;
-	--omp-rail-status-rank: 4;
-}
-#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st="done"] {
-	--omp-rail-status-text: "✓";
-	--omp-rail-status-fill: #3fae6a;
-	--omp-rail-status-ink: #ffffff;
-	--omp-rail-status-rank: 2;
-}
-#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st="failed"] {
-	--omp-rail-status-text: "✕";
-	--omp-rail-status-fill: #e05561;
-	--omp-rail-status-ink: #ffffff;
-	--omp-rail-status-rank: 5;
-}
-#sidebar .tn-vt .tn-dk-c[data-program="omp"][data-st="bell"] {
-	--omp-rail-status-text: "!";
-	--omp-rail-status-fill: #9b7be0;
-	--omp-rail-status-ink: #ffffff;
-	--omp-rail-status-rank: 3;
-}
-
-/* Split-pane status column: absolutely positioned beside the fixed-height caption lines.
-   Background sprites animate only the working rings, leaving all other rows unchanged. */
-#sidebar .tn-vt .nav-row > .tn-dk:not(.n1) > .tn-dk-c::before { content: none; }
-#sidebar .tn-vt .nav-row > .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out)::before {
+/* Floating status: the sprite is above the full-width caption. Its fixed background
+   layers cover text only on active rows and inherit the exact card fill in every state. */
+#sidebar .tn-vt .nav-row > .tn-dk > .tn-dk-c::before { content: none; }
+#sidebar .tn-vt .nav-row > .tn-dk > .tn-dk-c:not(.out)::before {
 	content: "";
 	position: absolute;
 	inset: auto;
 	top: 8px;
 	right: 0;
-	width: 16px;
+	z-index: 3;
+	display: block;
+	box-sizing: border-box;
+	width: 36px;
 	height: 0;
 	padding: 0;
 	border: 0;
 	border-radius: 0;
 	background: none;
 	background-repeat: no-repeat;
-	background-position: 0 0;
 	box-shadow: none;
 	animation: none;
 	transform: none;
+	filter: none;
 	opacity: 1;
+	visibility: hidden;
+	pointer-events: none;
 }
-@keyframes ompPaneStatusSpin { to { background-position: -176px 0; } }
+/* Focus promotes native deck nodes between d0/d1/d2. Preserve their animation hosts,
+   switching visibility only; clearing an alert must not restart another pane's ring. */
+#sidebar .tn-vt .nav-row > .tn-dk > .tn-dk-c.d0:not(.out)::before { visibility: visible; }
+#sidebar .tn-vt .nav-row > .tn-dk.n1 > .tn-dk-c:not(.out)::before { top: -4px; }
 @media (prefers-reduced-motion: reduce) {
-	#sidebar .tn-vt .nav-row > .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out)::before {
-		animation: none !important;
-		background-position: 0 0 !important;
-	}
+	#sidebar .tn-vt .nav-row > .tn-dk > .tn-dk-c:not(.out)::before { animation: none !important; }
 }

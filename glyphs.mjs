@@ -1,5 +1,5 @@
-// Reads only the title icons currently in use. Native glyph offsets and SVG outlines share
-// the configured font; the SVG renderer needs paths because it does not render font text.
+// Reads only the title icons currently in use as font-independent SVG outlines.
+// Tern's SVG renderer does not render font text.
 // Usage: node glyphs.mjs "<font family>" F0566 EA64
 import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -91,7 +91,7 @@ export function measure(file, codepoints) {
   const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
     ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const font = parseFont(buffer, { lowMemory: true });
-  const offsets = {}, paths = {};
+  const paths = {};
   for (const cp of new Set(codepoints)) {
     if (!PRIVATE_USE.some(([lo, hi]) => cp >= lo && cp <= hi)) continue;
     const key = cp.toString(16).toUpperCase();
@@ -99,18 +99,22 @@ export function measure(file, codepoints) {
     paths[key] = false;
     if (!index) continue;
     const glyph = font.glyphs.get(index);
-    const ink = glyph.getBoundingBox();
-    const shift = Math.round(((glyph.advanceWidth / 2 - (ink.x1 + ink.x2) / 2) / font.unitsPerEm) * 1000) / 1000;
-    if (Math.abs(shift) >= 0.02) offsets[key] = shift;
     const box = glyph.getPath(0, 0, 1, undefined, font).getBoundingBox();
     const size = Math.max(box.x2 - box.x1, box.y2 - box.y1);
     if (size <= 0) continue;
     const scale = 12 / size;
     const x = 8 - (box.x1 + box.x2) / 2 * scale;
     const y = 8 - (box.y1 + box.y2) / 2 * scale;
-    paths[key] = glyph.getPath(x, y, scale, undefined, font).toPathData({ decimalPlaces: 2, flipY: false });
+    const outline = glyph.getPath(x, y, scale, undefined, font);
+    // opentype.js 2.0.0 can serialize floating-point noise as NaN. Quantize to SVG precision first.
+    for (const command of outline.commands) {
+      for (const key in command) {
+        if (typeof command[key] === 'number') command[key] = Math.round(command[key] * 100) / 100;
+      }
+    }
+    paths[key] = outline.toPathData({ decimalPlaces: 2, flipY: false });
   }
-  return { offsets, paths };
+  return { paths };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -118,6 +122,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (!family) { process.stderr.write('Usage: glyphs.mjs <font family> [hex codepoints...]\n'); process.exit(1); }
   const codepoints = process.argv.slice(3).map(cp => Number.parseInt(cp, 16));
   const font = findFont(family);
-  const metrics = font ? measure(font, codepoints) : { offsets: {}, paths: Object.fromEntries(codepoints.map(cp => [cp.toString(16).toUpperCase(), false])) };
+  const metrics = font ? measure(font, codepoints) : { paths: Object.fromEntries(codepoints.map(cp => [cp.toString(16).toUpperCase(), false])) };
   process.stdout.write(JSON.stringify({ font, ...metrics }) + '\n');
 }

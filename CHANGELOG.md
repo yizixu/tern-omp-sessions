@@ -2,19 +2,12 @@
 
 ## Unreleased
 
-Kept a single native parent icon instead of layered duplicates now that every pane has its own icon. The tree begins at the parent icon's horizontal centre.
-
-Fixed caption lists briefly collapsing when pane focus changes. Every potential front icon has the same title rules in advance, and focus-only changes no longer replace the caption stylesheet.
-
-Moved split-pane status from a shared tab-level slot to the corresponding caption row, with independent animated icons and an unchanged layout. Single-pane tabs retain their original status slot.
-
-Upgraded pane captions to icon-and-title rows while retaining tree connectors, independent status slots, and stable focus changes. Custom title icons are rendered as vector outlines rather than font text, so they remain visible in Tern's SVG renderer.
-
-Increased pane rows to 24 px, added space below the parent title, and widened both sides of pane icons without shifting the tree rail. Status icons follow the same row pitch. The hover close button replaces the parent icon rather than covering the final tree branch.
-
-Removed the opacity-transition gap when swapping the parent icon and close button. Both now use the same hover state for immediate visibility, and the hidden button no longer intercepts the pointer.
-
-Use saved OMP conversation titles in pane captions, the pane picker, and unnamed tab headers. Child-process title changes no longer trigger the plugin's caption stylesheet refresh. Existing status animations are unchanged; this does not replace Tern's native animation lifecycle.
+- Refined the sidebar with opaque theme-aware cards, accent-tinted selection, and window-layout silhouettes based on actual split directions, proportions, and floating panes. Icon surfaces pick up a subtle accent tint in both light and dark themes.
+- Let titles and pane captions use the full width. Per-pane status icons float over matching card-colored backdrops with a soft left fade; idle rows reserve no status space. The 14 px native close glyph uses the same right-side overlay on hover, while the left layout silhouette stays visible.
+- Smoothed Working rings to a 60 fps sprite target with a seamless 900 ms loop. Stable native animation hosts and fixed background tracks keep other panes animating when focus changes or a completion is acknowledged. Reduced-motion settings still stop animation.
+- Kept saved OMP conversation titles in pane captions, the pane jumper, and unnamed tabs instead of child-process terminal titles. Focus changes no longer collapse caption lists, and process-title events do not refresh known OMP captions.
+- Fixed incomplete Nerd Font outlines by quantizing fractional coordinates before SVG serialization, refreshing the glyph cache, and adding a deterministic font-outline regression check.
+- Updated the native dark/light sidebar screenshot and documentation for layout silhouettes, floating statuses, and right-side close controls.
 
 ## 1.1.7
 

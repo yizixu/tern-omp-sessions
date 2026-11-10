@@ -2,8 +2,9 @@ local runtime = require("./runtime")
 local PaneStatus = require("./pane-status")
 local PaneIcons = require("./pane-icons")
 local PaneTitles = require("./pane-titles")
-local GLYPH_CACHE = 2
--- The visible title glyphs share native optical offsets and font-independent SVG paths.
+local PaneLayout = require("./pane-layout")
+local GLYPH_CACHE = 4
+-- SVG outlines come from the configured font and render independently of native title icons.
 local glyphs
 local measuring
 local invalidate
@@ -55,40 +56,39 @@ end
 local previousCss
 local function renderCaptions(cx)
 	local groups = panesByTab(cx)
-	local rules = {}
+	local rules, lightRules = {}, {}
 	local tabIds = {}
 	for tabId in groups do table.insert(tabIds, tabId) end
 	table.sort(tabIds)
 	for _, tabId in tabIds do
 		local panes = groups[tabId]
-		for _, pane in panes do
-			local icon = leadingIcon(pane.title)
-			local shift = icon and glyphs and glyphs.offsets[icon]
-			if shift then
-				-- Tern centres the icon's one-cell advance; this moves its ink to the tile centre.
-				table.insert(rules, string.format(
-					'#sidebar .tn-vt .nav-row .tn-dk-c[data-pane="%.0f"] > .tn-dk-g{transform:translateX(%.3fem);}',
-					pane.pane, shift
-				))
+		local window = PaneLayout.get(cx, tabId)
+		if window then
+			local paths = if glyphs then glyphs.paths else {}
+			local image, width, height = PaneIcons.background(panes, paths, window, true)
+			local lightImage = PaneIcons.background(panes, paths, window, false)
+			local declarations = string.format("background-image:url(%s);background-size:%dpx %dpx;", image, width, height)
+			local selector
+			if #panes == 1 then
+				selector = string.format('#sidebar .tn-vt .tn-dk.n1 > .tn-dk-c:not(.out)[data-pane="%.0f"]::after', panes[1].pane)
+			else
+				local lines, selectors = table.create(#panes), table.create(#panes)
+				for i, pane in panes do
+					lines[i] = paneTitle(pane)
+					selectors[i] = string.format('#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out)[data-pane="%.0f"]::after', pane.pane)
+				end
+				-- Every potential front node carries the same layout and captions before focus changes.
+				selector = table.concat(selectors, ",")
+				declarations ..= string.format("content:%s;", cssString(table.concat(lines, "\n")))
 			end
-		end
-	end
-	for _, tabId in tabIds do
-		local panes = groups[tabId]
-		if panes and #panes > 1 then
-			local lines, selectors = table.create(#panes), table.create(#panes)
-			for i, pane in panes do
-				lines[i] = paneTitle(pane)
-				selectors[i] = string.format('#sidebar .tn-vt .tn-dk:not(.n1) > .tn-dk-c.d0:not(.out)[data-pane="%.0f"]::after', pane.pane)
-			end
-			-- Every potential front icon already carries the same captions. Focus changes therefore
-			-- match immediately without waiting for the debounced CSS refresh or replacing the sheet.
-			local image, width, height = PaneIcons.background(panes, if glyphs then glyphs.paths else {})
-			table.insert(rules, table.concat(selectors, ",") .. string.format("{content:%s;background-image:url(%s);background-size:%dpx %dpx;}", cssString(table.concat(lines, "\n")), image, width, height))
+			table.insert(rules, selector .. "{" .. declarations .. "}")
+			-- data-theme is Tern's rendered palette; the OS media preference can disagree.
+			local lightSelector = 'html[data-theme="light"] ' .. string.gsub(selector, ",", ',html[data-theme="light"] ')
+			table.insert(lightRules, lightSelector .. "{background-image:url(" .. lightImage .. ");}")
 		end
 	end
 	PaneStatus.render(groups, cx)
-	local css = table.concat(rules, "\n")
+	local css = table.concat(rules, "\n") .. "\n" .. table.concat(lightRules, "\n")
 	if css == previousCss then return end
 	tern.css("sidebar-titles", css)
 	previousCss = css
@@ -98,9 +98,9 @@ local function measureGlyphs(cx)
 	local family = cx.settings:get("ui_font") or cx.settings:get("font_family")
 	if type(family) ~= "string" or family == "" then glyphs = nil; return end
 	if not glyphs or glyphs.family ~= family then
-		local cached = tern.kv.get("glyph-offsets")
+		local cached = tern.kv.get("glyph-paths")
 		glyphs = if type(cached) == "table" and cached.version == GLYPH_CACHE and cached.family == family
-			and type(cached.paths) == "table" then cached else { version = GLYPH_CACHE, family = family, offsets = {}, paths = {} }
+			and type(cached.paths) == "table" then cached else { version = GLYPH_CACHE, family = family, paths = {} }
 	end
 	if measuring then return end
 	local missing = {}
@@ -118,13 +118,12 @@ local function measureGlyphs(cx)
 		measuring = nil
 		if not glyphs or glyphs.family ~= family then invalidate(); return end
 		local ok, data = pcall(tern.json.decode, result.stdout)
-		if result.status ~= 0 or not ok or type(data) ~= "table" or type(data.paths) ~= "table" or type(data.offsets) ~= "table" then
+		if result.status ~= 0 or not ok or type(data) ~= "table" or type(data.paths) ~= "table" then
 			for _, icon in points do glyphs.paths[icon] = false end
 			tern.log.warn("omp-sessions: icon artwork unavailable for", family, result.stderr)
 		else
 			for icon, path in data.paths do glyphs.paths[icon] = path end
-			for icon, offset in data.offsets do glyphs.offsets[icon] = offset end
-			tern.kv.set("glyph-offsets", glyphs)
+			tern.kv.set("glyph-paths", glyphs)
 		end
 		invalidate()
 	end)
@@ -179,4 +178,5 @@ tern.command({ id = "pick_pane", title = "Jump to Pane", group = "OMP", icon = "
 tern.bind("ctrl+alt+j", "plugin.omp-sessions.pick_pane")
 PaneStatus.start(panesByTab)
 PaneTitles.start(invalidate)
+PaneLayout.start(invalidate)
 invalidate()
