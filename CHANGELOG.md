@@ -2,12 +2,18 @@
 
 ## Unreleased
 
-- Refined the sidebar with opaque theme-aware cards, accent-tinted selection, and window-layout silhouettes based on actual split directions, proportions, and floating panes. Icon surfaces pick up a subtle accent tint in both light and dark themes.
-- Let titles and pane captions use the full width. Per-pane status icons float over matching card-colored backdrops with a soft left fade; idle rows reserve no status space. The 14 px native close glyph uses the same right-side overlay on hover, while the left layout silhouette stays visible.
-- Smoothed Working rings to a 60 fps sprite target with a seamless 900 ms loop. Stable native animation hosts and fixed background tracks keep other panes animating when focus changes or a completion is acknowledged. Reduced-motion settings still stop animation.
-- Kept saved OMP conversation titles in pane captions, the pane jumper, and unnamed tabs instead of child-process terminal titles. Focus changes no longer collapse caption lists, and process-title events do not refresh known OMP captions.
-- Fixed incomplete Nerd Font outlines by quantizing fractional coordinates before SVG serialization, refreshing the glyph cache, and adding a deterministic font-outline regression check.
-- Updated the native dark/light sidebar screenshot and documentation for layout silhouettes, floating statuses, and right-side close controls.
+### Changed
+
+- Updated sidebar cards and icon colors for light and dark themes.
+- Session icons now show each tab's split layout.
+- Titles use the full width, with status icons floating over the text. The close button appears on the right when hovered, leaving the layout icon visible on the left.
+- Refreshed the sidebar screenshot and usage guide.
+
+### Fixed
+
+- Fixed loading indicators freezing when switching to a completed pane.
+- Fixed icon colors following the system theme instead of Tern's selected theme.
+- Fixed missing parts of Nerd Font icons.
 
 ## 1.1.7
 
