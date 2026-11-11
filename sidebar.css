@@ -136,6 +136,14 @@
 	filter: none;
 }
 #sidebar .tn-vt .nav-row > .tn-dk.n1 > .tn-dk-c > * { display: none; }
+/* Tern styles this pseudo-element as a status badge; here it paints the layout and captions. */
+#sidebar .tn-vt .tn-dk > .tn-dk-c::after {
+	opacity: 1;
+	transform: none;
+	transition: none;
+	animation: none;
+	box-shadow: none;
+}
 /* A zero-offset accent shadow shows through only the translucent SVG surfaces;
    opaque artwork, captions and tree lines keep their original contrast. */
 #sidebar .tn-vt .tn-dk.n1 > .tn-dk-c:not(.out)::after {
@@ -196,12 +204,9 @@
 	border: 0;
 	border-radius: 0;
 	background: none;
-	box-shadow: none;
 	background-repeat: no-repeat;
 	background-position: left top;
 	filter: drop-shadow(0 0 0 var(--accent));
-	animation: none;
-	opacity: 1;
 	color: inherit;
 	font-size: 12px;
 	font-weight: 400;

@@ -8,7 +8,7 @@ Track OMP activity in Tern's native sidebar with theme-aware session cards, actu
 
 ## Install
 
-- Verified on Windows with Tern 0.9.14, OMP 18.18.6, and Node.js 24.19.0. Other platforms and versions have not been verified.
+- Tested on Windows with Tern 0.9.14, OMP 18.18.6, and Node.js 24.19.0. The sidebar was also verified on Tern 0.9.16. Other platforms have not been verified.
 - Make sure `tern.com`, `node.exe`, and `omp.exe` are on the **Tern desktop process’s PATH**. Adding them only in a PowerShell startup script is not enough. Restart Tern and its session daemon after changing the system or user PATH. On Windows, resuming a saved session uses PowerShell 7 as the Tern shell.
 
 With Git on PATH, install directly from GitHub:

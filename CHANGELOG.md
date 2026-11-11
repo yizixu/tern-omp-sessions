@@ -15,6 +15,7 @@
 - Fixed icon colors following the system theme instead of Tern's selected theme.
 - Fixed missing parts of Nerd Font icons.
 - Fixed gaps and uneven edges along selected cards' left borders.
+- Fixed missing layout icons on single-pane tabs and shrunken pane trees on split tabs in Tern 0.9.16.
 
 ## 1.1.7
 
