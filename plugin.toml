@@ -1,7 +1,7 @@
 schema = 1
 id = "omp-sessions"
 name = "OMP Sessions"
-version = "1.1.7"
+version = "1.1.8"
 description = "See live OMP states and split-pane titles in Tern's sidebar, then find or resume sessions."
 icon = "terminal"
 host = "host.luau"
